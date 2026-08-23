@@ -1,4 +1,5 @@
 # Render Blueprint for the Fat7 3D printing backend.
+# Database is Neon (neon.tech) — set DATABASE_URL to the Neon connection string.
 # In Render: New + > Blueprint, point it at the repo containing this file.
 services:
   - type: web
@@ -21,9 +22,7 @@ services:
       - key: DATABASE_SSL_REQUIRE
         value: "True"
       - key: DATABASE_URL
-        fromDatabase:
-          name: fat7-3d-db
-          property: connectionString
+        sync: false   # paste your Neon pooled connection string (…-pooler…/neondb?sslmode=require)
       # Email — set these as secrets in the dashboard (do not commit values)
       - key: EMAIL_BACKEND
         value: "django.core.mail.backends.smtp.EmailBackend"
@@ -39,7 +38,3 @@ services:
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
-
-databases:
-  - name: fat7-3d-db
-    plan: free
