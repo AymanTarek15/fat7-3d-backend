@@ -17,9 +17,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def env_list(name, default=""):
-    """Read a comma-separated env var into a clean list."""
+    """Read a comma-separated env var into a clean list.
+
+    Trailing slashes are stripped so a value like "https://site.app/" is
+    accepted for CORS/CSRF origins (which must not include a path).
+    """
     raw = os.getenv(name, default)
-    return [item.strip() for item in raw.split(",") if item.strip()]
+    return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
 
 
 # --- Core security -----------------------------------------------------------
