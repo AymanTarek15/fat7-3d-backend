@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <body style="font-family:Arial,Helvetica,sans-serif">
+    <h2>Thanks for your purchase, {{ order.customer_name }}!</h2>
+    <p>Order #{{ order.number }} | {{ order.created_at }}</p>
+    <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse">
+      <thead><tr><th align="left">Item</th><th align="right">Qty</th><th align="right">Price</th></tr></thead>
+      <tbody>
+      {% for line in order.lines %}
+        <tr>
+          <td>{{ line.title }}</td>
+          <td align="right">{{ line.qty }}</td>
+          <td align="right">{{ line.total|floatformat:2 }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="2" align="right"><strong>Subtotal</strong></td><td align="right">{{ order.subtotal|floatformat:2 }}</td></tr>
+        <tr><td colspan="2" align="right">Shipping</td><td align="right">{{ order.shipping|floatformat:2 }}</td></tr>
+        <tr><td colspan="2" align="right"><strong>Total</strong></td><td align="right"><strong>{{ order.total|floatformat:2 }}</strong></td></tr>
+      </tfoot>
+    </table>
+    <p>We’ll let you know when your order ships. Need help? Reply to this email.</p>
+  </body>
+</html>

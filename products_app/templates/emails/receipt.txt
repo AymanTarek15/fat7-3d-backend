@@ -1,0 +1,11 @@
+Thanks for your purchase, {{ order.customer_name }}!
+Order #{{ order.number }} | {{ order.created_at }}
+
+{% for line in order.lines %}- {{ line.title }} x{{ line.qty }} = {{ line.total|floatformat:2 }}
+{% endfor %}
+
+Subtotal: {{ order.subtotal|floatformat:2 }}
+Shipping: {{ order.shipping|floatformat:2 }}
+Total:    {{ order.total|floatformat:2 }}
+
+We’ll email you tracking once it ships. Need help? Just reply.
