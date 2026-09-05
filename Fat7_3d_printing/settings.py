@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -118,9 +119,21 @@ WSGI_APPLICATION = 'Fat7_3d_printing.wsgi.application'
 # --- Database ----------------------------------------------------------------
 # Uses DATABASE_URL (e.g. Render Postgres) when set, otherwise local SQLite.
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Safety guard: never silently fall back to an ephemeral SQLite file in
+# production. On Render's free tier the disk is wiped on every restart, so a
+# missing DATABASE_URL would quietly lose all data. Fail loudly instead.
+if not DEBUG and not DATABASE_URL:
+    raise ImproperlyConfigured(
+        "DATABASE_URL is not set. Refusing to start in production with an "
+        "ephemeral SQLite database (data would be lost on every restart). "
+        "Set DATABASE_URL to your managed Postgres (Neon) connection string."
+    )
+
 DATABASES = {
     "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        default=DATABASE_URL or f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
         ssl_require=os.getenv("DATABASE_SSL_REQUIRE", "False") == "True",
     )
