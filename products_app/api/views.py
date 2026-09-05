@@ -2,15 +2,23 @@ from products_app.models import Review,Category, ProductList,SeasonChange,Order
 from products_app.api.serializers import ReviewSerializer,CategorySerializer,ProductListSerializer,SeasonChangeSerializer,OrderCreateSerializer,OrderSerializer,ContactMessageSerializer
 from products_app.services.contact_emails import send_contact_notification
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework import generics,mixins,viewsets, permissions
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, SAFE_METHODS, BasePermission
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as filters
 # from watchlist_app.api.permissions import AdminOrReadOnly,ReviewUserOrReadOnly
+
+
+class IsAdminOrReadOnly(BasePermission):
+    """Public read (GET/HEAD/OPTIONS); writes require a staff user."""
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_staff)
 
 from django.db import transaction
 from products_app.services.email_receipts import send_order_receipt
@@ -101,6 +109,7 @@ class ProductListFilter(generics.ListAPIView):
   
   
 @api_view(['GET','POST'])
+@permission_classes([IsAdminOrReadOnly])
 def product_list(request):
   if request.method=='GET':
     products=ProductList.objects.all()
@@ -117,6 +126,7 @@ def product_list(request):
 
 
 @api_view(['GET','PUT','DELETE'])
+@permission_classes([IsAdminOrReadOnly])
 def product_details(request,id):
   if request.method=='GET':
     movie=ProductList.objects.get(pk=id)
@@ -145,6 +155,7 @@ class CategoryFilter(generics.ListAPIView):
   filterset_fields = ['name','about','image','active',]
   
 class CategoryAV(APIView):
+  permission_classes = [IsAdminOrReadOnly]
   def get(self, request):
     category=Category.objects.all()
     serializer=CategorySerializer(category, many=True)
@@ -161,6 +172,7 @@ class CategoryAV(APIView):
     
     
 class CategoryDetailAV(APIView):
+  permission_classes = [IsAdminOrReadOnly]
   def get(self, request,id):
     category=Category.objects.get(pk=id)
     serializer=CategorySerializer(category)
