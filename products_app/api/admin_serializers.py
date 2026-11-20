@@ -12,6 +12,11 @@ from products_app.models import (
     Order,
     OrderStatus,
     ContactMessage,
+    Quote,
+    QuoteItem,
+    Printer,
+    Material,
+    PrintJob,
 )
 from products_app.api.serializers import OrderItemSerializer
 
@@ -111,10 +116,14 @@ class OrderStatusSerializer(serializers.ModelSerializer):
 
 
 class AdminOrderSerializer(serializers.ModelSerializer):
-    """Read-focused; only `status` is writable (owner updates fulfillment state)."""
+    """Read-focused; `status`, `payment_status` and `amount_paid` are writable
+    (the owner updates fulfillment and payment state from the admin)."""
     items = OrderItemSerializer(many=True, read_only=True)
     status = serializers.PrimaryKeyRelatedField(queryset=OrderStatus.objects.all())
     status_label = serializers.CharField(source="status.status", read_only=True)
+    payment_status_label = serializers.CharField(
+        source="get_payment_status_display", read_only=True
+    )
 
     class Meta:
         model = Order
@@ -133,6 +142,9 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "tax_total",
             "shipping_total",
             "grand_total",
+            "payment_status",
+            "payment_status_label",
+            "amount_paid",
             "items",
         ]
         read_only_fields = [
@@ -155,3 +167,140 @@ class AdminContactSerializer(serializers.ModelSerializer):
         model = ContactMessage
         fields = ["id", "name", "email", "message", "handled", "created"]
         read_only_fields = ["id", "name", "email", "message", "created"]
+
+class AdminQuoteItemSerializer(serializers.ModelSerializer):
+    line_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    process_label = serializers.CharField(source="get_process_display", read_only=True)
+
+    class Meta:
+        model = QuoteItem
+        fields = [
+            "id", "name", "spec", "process", "process_label",
+            "quantity", "unit_price", "line_total",
+        ]
+
+
+class AdminQuoteSerializer(serializers.ModelSerializer):
+    """Quotes with their line items. Items are written inline so the admin can
+    save a quote and its lines in one request."""
+
+    items = AdminQuoteItemSerializer(many=True, required=False)
+
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    service_label = serializers.CharField(source="get_service_display", read_only=True)
+
+    # Derived on the model, exposed read-only so the numbers can never drift
+    # apart from the line items they come from.
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    cost_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    margin_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    margin_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=2, read_only=True, allow_null=True
+    )
+
+    converted_order_number = serializers.CharField(
+        source="converted_order.order_number", read_only=True, default=None
+    )
+
+    class Meta:
+        model = Quote
+        fields = [
+            "id", "quote_number",
+            "customer_name", "customer_email", "customer_company",
+            "service", "service_label", "status", "status_label",
+            "created_at", "valid_until", "source",
+            "customer_notes", "terms",
+            "materials_cost", "machining_cost", "additional_cost",
+            "subtotal", "cost_total", "margin_amount", "margin_percent",
+            "converted_order", "converted_order_number",
+            "items",
+        ]
+        read_only_fields = ["quote_number", "created_at", "converted_order"]
+
+    def create(self, validated_data):
+        items = validated_data.pop("items", [])
+        quote = Quote.objects.create(**validated_data)
+        for item in items:
+            QuoteItem.objects.create(quote=quote, **item)
+        return quote
+
+    def update(self, instance, validated_data):
+        items = validated_data.pop("items", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Items are replaced wholesale: the admin edits the whole line set at
+        # once, and diffing by id would silently keep rows the user deleted.
+        if items is not None:
+            instance.items.all().delete()
+            for item in items:
+                QuoteItem.objects.create(quote=instance, **item)
+
+        return instance
+
+
+class AdminPrinterSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    current_job = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Printer
+        fields = ["id", "name", "model_name", "status", "status_label", "notes", "active", "current_job"]
+
+    def get_current_job(self, obj):
+        job = obj.jobs.filter(status=PrintJob.STATUS_PRINTING).first()
+        if not job:
+            return None
+        return {
+            "id": job.id,
+            "job_number": job.job_number,
+            "file_name": job.file_name,
+            "progress_percent": job.progress_percent,
+            "elapsed_minutes": job.elapsed_minutes,
+            "estimated_minutes": job.estimated_minutes,
+        }
+
+
+class AdminMaterialSerializer(serializers.ModelSerializer):
+    type_label = serializers.CharField(source="get_material_type_display", read_only=True)
+
+    class Meta:
+        model = Material
+        fields = [
+            "id", "name", "material_type", "type_label",
+            "color", "color_hex", "stock_grams", "cost_per_gram",
+        ]
+
+
+class AdminPrintJobSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    post_stage_label = serializers.CharField(source="get_post_stage_display", read_only=True)
+    printer_name = serializers.CharField(source="printer.name", read_only=True, default=None)
+    material_name = serializers.CharField(source="material.name", read_only=True, default=None)
+    material_type = serializers.CharField(source="material.material_type", read_only=True, default=None)
+    material_hex = serializers.CharField(source="material.color_hex", read_only=True, default=None)
+    order_number = serializers.CharField(source="order.order_number", read_only=True, default=None)
+    quote_number = serializers.CharField(source="quote.quote_number", read_only=True, default=None)
+
+    # Derived, read-only: estimated from the planned duration, not telemetry.
+    progress_percent = serializers.IntegerField(read_only=True)
+    elapsed_minutes = serializers.IntegerField(read_only=True)
+    remaining_minutes = serializers.IntegerField(read_only=True)
+    estimated_finish = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = PrintJob
+        fields = [
+            "id", "job_number", "file_name",
+            "printer", "printer_name",
+            "material", "material_name", "material_type", "material_hex",
+            "quantity", "layer_height", "infill_percent",
+            "estimated_minutes", "filament_estimated_g", "filament_used_g",
+            "status", "status_label", "post_stage", "post_stage_label",
+            "started_at", "completed_at", "failure_reason",
+            "order", "order_number", "quote", "quote_number", "note",
+            "created_at",
+            "progress_percent", "elapsed_minutes", "remaining_minutes", "estimated_finish",
+        ]
+        read_only_fields = ["job_number", "created_at"]
